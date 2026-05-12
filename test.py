@@ -1,21 +1,3 @@
-#
-# p = pyaudio.PyAudio()
-#
-# for i in range(p.get_device_count()):
-#     info = p.get_device_info_by_index(i)
-#     host_api = p.get_host_api_info_by_index(info['hostApi'])['name']
-#
-#     print(i,
-#           info['name'],
-#           "| API:", host_api,
-#           "| IN:", info['maxInputChannels'],
-#           "| OUT:", info['maxOutputChannels'])
-from numpy.core.defchararray import endswith
-from retico_core.audio import MicrophoneModule, SpeakerModule
-
-# show_audio_devices()
-
-
 from retico_core.audio import *
 from retico_whisperasr import WhisperASRModule
 from retico_speechbraintts import  SpeechBrainTTSModule
@@ -29,15 +11,17 @@ import retico_core
 
 
 print("Starting hugging face lm...",end="")
+device = "cuda:0"
+# device = "cpu"
 """ HuggingFace Model, Tokenzier, Model """
 checkpoint = "HuggingFaceTB/SmolLM2-135M-Instruct"
 tokenizer = AutoTokenizer.from_pretrained(checkpoint,  trust_remote_code=True)
-model = AutoModelForCausalLM.from_pretrained(checkpoint,  trust_remote_code=True).to("cuda:0")
+model = AutoModelForCausalLM.from_pretrained(checkpoint,  trust_remote_code=True).to(device)
 streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 print("Done")
 
-SOTA_IP = "192.168.0.23"
-# SOTA_IP = "10.151.63.71"
+# SOTA_IP = "192.168.0.23"#
+SOTA_IP = "10.151.63.71"
 HTTP_PORT = "8080"
 MIC_UDP_PORT = 52001
 
@@ -49,7 +33,7 @@ def callback(update_msg):
     for x, ut in update_msg:
         if ut == retico_core.UpdateType.ADD:
             msg.append(x)
-            print(x.text, end="")
+            print(x.text+" ", end="")
         if ut == retico_core.UpdateType.REVOKE:
             msg.remove(x)
     print("")
@@ -65,20 +49,17 @@ def callback(update_msg):
         msg = []
         print("")
 
-
 sota = ConnectionManager(SOTA_IP, HTTP_PORT)
 # microphone_module = MicrophoneModule(rate=16000, sample_width=2)
-microphone_module = SotaMicrophoneModule(sota, MIC_UDP_PORT)
+microphone_module = SotaMicrophoneModule(sota, MIC_UDP_PORT, buffer_ms=20)
 speaker_module = SpeakerModule(rate=22050, sample_width=2)
 
-# asr = Wav2VecASRModule("en")  #ASR
 print("Starting Whisper ASR...", end="")
 asr = WhisperASRModule()
 print("done.")
 
 m3 = retico_core.debug.CallbackModule(callback=callback)
-m4 = retico_core.debug.TextPrinterModule()
-
+# m4 = retico_core.debug.TextPrinterModule()
 
 print("Starting SpeechBrains...", end="")
 tts = SpeechBrainTTSModule(language="en")
@@ -90,14 +71,12 @@ lm = HuggingfaceLM("cuda:0", tokenizer, model, streamer)
 microphone_module.subscribe(asr)
 asr.subscribe(lm)
 # lm.subscribe(m4)
-# lm.subscribe(tts)
+lm.subscribe(tts)
 asr.subscribe(m3)
-asr.subscribe(tts)
+# asr.subscribe(tts)
 tts.subscribe(speaker_module)
 
-
 # asr.subscribe(m4)
-
 
 microphone_module.run()
 asr.run()
@@ -105,7 +84,7 @@ tts.run()
 lm.run()
 speaker_module.run()
 m3.run()
-m4.run()
+# m4.run()
 print("go")
 input()
 
@@ -113,3 +92,4 @@ microphone_module.stop()
 speaker_module.stop()
 asr.stop()
 tts.stop()
+lm.stop()

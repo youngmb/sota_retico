@@ -42,11 +42,14 @@ class SotaMicrophoneModule(retico_core.AbstractProducingModule):
             in_data (bytes[]): The raw audio that is coming in from the
                 microphone
             frame_count (int): The number of frames that are stored in in_data
+            data_udp_port (int): The UDP port to listen on and to ask SOTA to send to
+            buffer_ms (int): how many ms for the buffer. An underlying library requires a multiple of 10ms
+                                <20ms seems to choke with no cpu load, unclear why
         """
         self.audio_buffer.put(in_data)
         return (in_data, pyaudio.paContinue)
 
-    def __init__(self, sota: ConnectionManager, data_udp_port: int, **kwargs):
+    def __init__(self, sota: ConnectionManager, data_udp_port: int, buffer_ms : int = 20 , **kwargs):
         """
         Initialize the Sota Microphone Module.
 
@@ -66,7 +69,10 @@ class SotaMicrophoneModule(retico_core.AbstractProducingModule):
         self.data_udp_port = data_udp_port
 
         self.audio_buffer = sota.microphone.data_queue
-        self.chunk_size_in_frames = None
+        self.frames_per_buffer = None
+        self.buffer_ms = buffer_ms
+        if not (buffer_ms % 10 == 0):
+            print ("Error: use a multiple of 10ms to play nicely with other libraries")
 
     def process_update(self, _):
         if not self.audio_buffer:
@@ -75,18 +81,30 @@ class SotaMicrophoneModule(retico_core.AbstractProducingModule):
             sample = self.audio_buffer.get(timeout=1.0)
         except queue.Empty:
             return None
+        # print("packet")
         output_iu = self.create_iu()
-        output_iu.set_audio(sample, self.chunk_size_in_frames, self.rate, self.sample_width)
+        output_iu.set_audio(sample, self.frames_per_buffer, self.rate, self.sample_width)
         return retico_core.UpdateMessage.from_iu(output_iu, retico_core.UpdateType.ADD)
 
     def setup(self):
         """Set up the microphone for recording."""
         self.sota.microphone.enable(data_udp_port=self.data_udp_port, restart_if_enabled=True)
         sota_state = self.sota.microphone.get_state(use_cached=True)
+        print("Initial mic stream state"+str(sota_state))
+
         self.rate = sota_state['sampleRate']
         self.sample_width = sota_state['sampleSize_bits'] // 8
-        self.chunk_size_in_frames = sota_state['bufferSize'] // self.sample_width
-        print(sota_state)
+
+        buffer_size_needed = int(self.buffer_ms * self.rate / 1000 * self.sample_width)
+
+        if buffer_size_needed != sota_state['bufferSize']:  # we need to restart with a different buffer size
+            self.sota.microphone.enable(data_udp_port=self.data_udp_port,
+                                        request_buffer_size=buffer_size_needed,
+                                        restart_if_enabled=True)
+            sota_state = self.sota.microphone.get_state(use_cached=True)
+            print("Updated mic stream state" + str(sota_state))
+
+        self.frames_per_buffer = sota_state['bufferSize'] // self.sample_width
 
     def prepare_run(self):
         pass
