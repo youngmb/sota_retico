@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=80", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+version_file = "sota_retico/_version.py"
+
+[project]
+name = "sota_retico"
+dynamic=["version"]
+description = "Sota integration with retico, using our in-house thinserver and thinclient"
+readme = "README.md"
+requires-python = "=3.11"   # Fixed to match the required retico, torch, etc., version matching
+authors = [
+    { name="James Young", email="young@cs.umanitoba.ca" }
+]
+license = { file="LICENSE" }
+dependencies = [
+    "pyaudio",
+    "numpy==1.26.4",          # to work with older torch versions
+    "transformers==4.57.6",   # to work with older torch versions
+
+    ###retico dependencies
+    "retico-core @ git+https://github.com/retico-team/retico-core",
+    "retico-huggingfacelm @ git+https://github.com/retico-team/retico-huggingfacelm",
+    "retico-speechbraintts @ git+https://github.com/retico-team/retico-speechbraintts",
+    "retico-whisperasr @ git+https://github.com/retico-team/retico-whisperasr",
+
+    ### Our own sota thinclient
+    "sota_thinclient @ git+https://github.com/youngmb/sota_thinclient"
+
+
+]
+
+[project.optional-dependencies]
+test = [
+]
