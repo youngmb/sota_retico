@@ -5,7 +5,7 @@ from retico_huggingfacelm.huggingface_lm import HuggingfaceLM
 from sota_thinclient import ConnectionManager
 from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer, TextIteratorStreamer
 
-from sotaaudio import SotaMicrophoneModule
+from sota_retico import SotaMicrophoneModule
 
 import retico_core
 

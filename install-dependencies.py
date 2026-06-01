@@ -2,16 +2,24 @@
 import subprocess
 import sys
 
-commands = [
-    "pip install numpy==1.26.4 transformers==4.57.6",
-    "pip install git+https://github.com/retico-team/retico-core",
-    "pip install git+https://github.com/retico-team/retico-huggingfacelm",
-    "pip install git+https://github.com/retico-team/retico-speechbraintts",
-    "pip install git+https://github.com/retico-team/retico-whisperasr",
-    "pip install torch==2.3.1+cu121 torchaudio==2.3.1+cu121 torchvision==0.18.1+cu121 --index-url https://download.pytorch.org/whl/cu121"
-    #"pip install torch==2.3.1 torchaudio==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121" // uncomment for CPU not GPU
-]
+### SET THIS to false to rely on CPU builds
+useGPU = True
 
-for cmd in commands:
-    print(f"Running: {cmd}")
-    subprocess.check_call([sys.executable, "-m"] + cmd.split())
+gpuSuffix = "+cu121" if useGPU else ""
+
+def install(packagelist, flags=None):
+    flags = flags or []
+    subprocess.check_call([sys.executable, "-m", "pip", "install", *flags, *packagelist])
+
+
+install(["numpy==1.26.4","transformers==4.57.6"])     # should already be satisfied with package install
+
+install(["torch==2.3.1"+gpuSuffix, "torchaudio==2.3.1"+gpuSuffix, "torchvision==0.18.1"+gpuSuffix],
+        flags="--index-url https://download.pytorch.org/whl/cu121".split())
+
+install([
+        "retico-core @ git+https://github.com/retico-team/retico-core@39e9957ee008b3e13ab4248040929f29056fb4ad",
+        "retico-huggingfacelm @ git+https://github.com/retico-team/retico-huggingfacelm@fee25b055e47283fb5be3fedfe4ecd6c067d2e8a",
+        "retico-speechbraintts @ git+https://github.com/retico-team/retico-speechbraintts@ad5c0c449d422c0f7bc43db2925eedf8026bd318",
+        "retico-whisperasr @ git+https://github.com/retico-team/retico-whisperasr@cf568c2a8b746558ddd71b2bf6cb58ba1141d175",
+])

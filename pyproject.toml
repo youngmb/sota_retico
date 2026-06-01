@@ -20,13 +20,7 @@ dependencies = [
     "numpy==1.26.4",          # to work with older torch versions
     "transformers==4.57.6",   # to work with older torch versions
 
-    ###retico dependencies
-    "retico-core @ git+https://github.com/retico-team/retico-core",
-    "retico-huggingfacelm @ git+https://github.com/retico-team/retico-huggingfacelm",
-    "retico-speechbraintts @ git+https://github.com/retico-team/retico-speechbraintts",
-    "retico-whisperasr @ git+https://github.com/retico-team/retico-whisperasr",
-
-    ### Our own sota thinclient
+     ### Our own sota thinclient
     "sota_thinclient @ git+https://github.com/youngmb/sota_thinclient"
 ]
 
