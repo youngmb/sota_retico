@@ -10,7 +10,7 @@ name = "sota_retico"
 dynamic=["version"]
 description = "Sota integration with retico, using our in-house thinserver and thinclient"
 readme = "README.md"
-requires-python = "=3.11"   # Fixed to match the required retico, torch, etc., version matching
+requires-python = "~=3.11"   # Fixed to match the required retico, torch, etc., version matching
 authors = [
     { name="James Young", email="young@cs.umanitoba.ca" }
 ]
@@ -28,8 +28,6 @@ dependencies = [
 
     ### Our own sota thinclient
     "sota_thinclient @ git+https://github.com/youngmb/sota_thinclient"
-
-
 ]
 
 [project.optional-dependencies]
