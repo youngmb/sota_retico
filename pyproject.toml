@@ -17,6 +17,7 @@ authors = [
 license = { file="LICENSE" }
 dependencies = [
     "pyaudio",
+    "scipy",
     "numpy==1.26.4",          # to work with older torch versions
     "transformers==4.57.6",   # to work with older torch versions
 

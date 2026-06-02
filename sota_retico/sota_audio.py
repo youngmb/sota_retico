@@ -13,6 +13,9 @@ import pyaudio
 import retico_core
 from retico_core.audio import AudioIU
 from sota_thinclient import ConnectionManager
+import numpy as np
+from scipy import signal
+
 
 CHANNELS = 1
 """Number of channels. For now, this is hard coded MONO. If there is interest to do
@@ -46,10 +49,12 @@ class SotaMicrophoneModule(retico_core.AbstractProducingModule):
             buffer_ms (int): how many ms for the buffer. An underlying library requires a multiple of 10ms
                                 <20ms seems to choke with no cpu load, unclear why
         """
-        self.audio_buffer.put(in_data)
+        self._audio_buffer.put(in_data)
         return (in_data, pyaudio.paContinue)
 
-    def __init__(self, sota: ConnectionManager, data_udp_port: int, buffer_ms : int = 20 , **kwargs):
+    def __init__(self, sota: ConnectionManager,
+                 data_udp_port: int,
+                 buffer_ms : int = 20 , **kwargs):
         """
         Initialize the Sota Microphone Module.
 
@@ -61,213 +66,158 @@ class SotaMicrophoneModule(retico_core.AbstractProducingModule):
                 uses the default input device.
         """
         super().__init__(**kwargs)
-        self.sota = sota
+        self._sota = sota
 
-        self.frame_length = None
-        self.rate = None
-        self.sample_width = None
-        self.data_udp_port = data_udp_port
+        self._frame_length = None
+        self._rate = None
+        self._sample_width = None
+        self._data_udp_port = data_udp_port
 
-        self.audio_buffer = sota.microphone.data_queue
-        self.frames_per_buffer = None
-        self.buffer_ms = buffer_ms
+        self._audio_buffer = sota.microphone.data_queue
+        self._frames_per_buffer = None
+        self._buffer_ms = buffer_ms
         if not (buffer_ms % 10 == 0):
             print ("Error: use a multiple of 10ms to play nicely with other libraries")
 
     def process_update(self, _):
-        if not self.audio_buffer:
+        if not self._audio_buffer:
             return None
         try:
-            sample = self.audio_buffer.get(timeout=1.0)
+            sample = self._audio_buffer.get(timeout=1.0)
         except queue.Empty:
             return None
         # print("packet")
         output_iu = self.create_iu()
-        output_iu.set_audio(sample, self.frames_per_buffer, self.rate, self.sample_width)
+        output_iu.set_audio(sample, self._frames_per_buffer, self._rate, self._sample_width)
         return retico_core.UpdateMessage.from_iu(output_iu, retico_core.UpdateType.ADD)
 
     def setup(self):
         """Set up the microphone for recording."""
-        self.sota.microphone.enable(data_udp_port=self.data_udp_port, restart_if_enabled=True)
-        sota_state = self.sota.microphone.get_state(use_cached=True)
+        self._sota.microphone.enable(data_udp_port=self._data_udp_port, restart_if_enabled=True)
+        sota_state = self._sota.microphone.get_state(use_cached=True)
         print("Initial mic stream state"+str(sota_state))
 
-        self.rate = sota_state['sampleRate']
-        self.sample_width = sota_state['sampleSize_bits'] // 8
+        self._rate = sota_state['sampleRate']
+        self._sample_width = sota_state['sampleSize_bits'] // 8
 
-        buffer_size_needed = int(self.buffer_ms * self.rate / 1000 * self.sample_width)
+        buffer_size_needed = int(self._buffer_ms * self._rate / 1000 * self._sample_width)
 
         if buffer_size_needed != sota_state['bufferSize']:  # we need to restart with a different buffer size
-            self.sota.microphone.enable(data_udp_port=self.data_udp_port,
-                                        request_buffer_size=buffer_size_needed,
-                                        restart_if_enabled=True)
-            sota_state = self.sota.microphone.get_state(use_cached=True)
+            self._sota.microphone.enable(data_udp_port=self._data_udp_port,
+                                         request_buffer_size=buffer_size_needed,
+                                         restart_if_enabled=True)
+            sota_state = self._sota.microphone.get_state(use_cached=True)
             print("Updated mic stream state" + str(sota_state))
 
-        self.frames_per_buffer = sota_state['bufferSize'] // self.sample_width
+        self._frames_per_buffer = sota_state['bufferSize'] // self._sample_width
 
     def prepare_run(self):
         pass
 
     def shutdown(self):
-        self.sota.microphone.disable()
+        self._sota.microphone.disable()
 
-#
-# class SpeakerModule(retico_core.AbstractConsumingModule):
-#     """A module that consumes AudioIUs of arbitrary size and outputs them to the
-#     speakers of the machine. When a new IU is incoming, the module blocks as
-#     long as the current IU is being played."""
-#
-#     @staticmethod
-#     def name():
-#         return "Speaker Module"
-#
-#     @staticmethod
-#     def description():
-#         return "A consuming module that plays audio from speakers."
-#
-#     @staticmethod
-#     def input_ius():
-#         return [AudioIU]
-#
-#     @staticmethod
-#     def output_iu():
-#         return None
-#
-#     def __init__(
-#         self,
-#         rate=44100,
-#         sample_width=2,
-#         use_speaker="both",
-#         device_index=None,
-#         **kwargs
-#     ):
-#         super().__init__(**kwargs)
-#         self.rate = rate
-#         self.sample_width = sample_width
-#         self.use_speaker = use_speaker
-#
-#         self._p = pyaudio.PyAudio()
-#
-#         if device_index is None:
-#             device_index = self._p.get_default_output_device_info()["index"]
-#         self.device_index = device_index
-#
-#         self.stream = None
-#         self.time = None
-#
-#     def process_update(self, update_message):
-#         for iu, ut in update_message:
-#             if ut == retico_core.UpdateType.ADD:
-#                 self.stream.write(bytes(iu.raw_audio))
-#         return None
-#
-#     def setup(self):
-#         """Set up the speaker for outputting audio"""
-#         p = self._p
-#
-#         if platform.system() == "Darwin":
-#             if self.use_speaker == "left":
-#                 stream_info = pyaudio.PaMacCoreStreamInfo(channel_map=(0, -1))
-#             elif self.use_speaker == "right":
-#                 stream_info = pyaudio.PaMacCoreStreamInfo(channel_map=(-1, 0))
-#             else:
-#                 stream_info = pyaudio.PaMacCoreStreamInfo(channel_map=(0, 0))
-#         else:
-#             stream_info = None
-#
-#         self.stream = p.open(
-#             format=p.get_format_from_width(self.sample_width),
-#             channels=CHANNELS,
-#             rate=self.rate,
-#             input=False,
-#             output_host_api_specific_stream_info=stream_info,
-#             output=True,
-#             output_device_index=self.device_index,
-#         )
-#
-#     def shutdown(self):
-#         """Close the audio stream."""
-#         self.stream.stop_stream()
-#         self.stream.close()
-#         self.stream = None
-#
-#
-# class StreamingSpeakerModule(retico_core.AbstractConsumingModule):
-#     """A module that consumes Audio IUs and outputs them to the speaker of the
-#     machine. The audio output is streamed and thus the Audio IUs have to have
-#     exactly [chunk_size] samples."""
-#
-#     @staticmethod
-#     def name():
-#         return "Streaming Speaker Module"
-#
-#     @staticmethod
-#     def description():
-#         return "A consuming module that plays audio from speakers."
-#
-#     @staticmethod
-#     def input_ius():
-#         return [AudioIU]
-#
-#     @staticmethod
-#     def output_iu():
-#         return None
-#
-#     def callback(self, in_data, frame_count, time_info, status):
-#         """The callback function that gets called by pyaudio."""
-#         if self.audio_buffer:
-#             try:
-#                 audio_paket = self.audio_buffer.get(timeout=TIMEOUT)
-#                 return (audio_paket, pyaudio.paContinue)
-#             except queue.Empty:
-#                 pass
-#         return (b"\0" * frame_count * self.sample_width, pyaudio.paContinue)
-#
-#     def __init__(self, frame_length=0.02, rate=44100, sample_width=2, **kwargs):
-#         """Initialize the streaming speaker module.
-#
-#         Args:
-#             frame_length (float): The length of one frame (i.e., IU) in seconds.
-#             rate (int): The frame rate of the audio. Defaults to 44100.
-#             sample_width (int): The sample width of the audio. Defaults to 2.
-#         """
-#         super().__init__(**kwargs)
-#         self.frame_length = frame_length
-#         self.chunk_size = round(rate * frame_length)
-#         self.rate = rate
-#         self.sample_width = sample_width
-#
-#         self._p = pyaudio.PyAudio()
-#
-#         self.audio_buffer = queue.Queue()
-#         self.stream = None
-#
-#     def process_update(self, update_message):
-#         for iu, ut in update_message:
-#             if ut == retico_core.UpdateType.ADD:
-#                 self.audio_buffer.put(iu.raw_audio)
-#         return None
-#
-#     def setup(self):
-#         """Set up the speaker for speaking...?"""
-#         p = self._p
-#         self.stream = p.open(
-#             format=p.get_format_from_width(self.sample_width),
-#             channels=CHANNELS,
-#             rate=self.rate,
-#             input=False,
-#             output=True,
-#             stream_callback=self.callback,
-#             frames_per_buffer=self.chunk_size,
-#         )
-#
-#     def prepare_run(self):
-#         self.stream.start_stream()
-#
-#     def shutdown(self):
-#         """Close the audio stream."""
-#         self.stream.stop_stream()
-#         self.stream.close()
-#         self.stream = None
-#         self.audio_buffer = queue.Queue()
+
+class SotaSpeakerModule(retico_core.AbstractConsumingModule):
+    """A module that consumes AudioIUs of arbitrary size and outputs them to the
+    Sota's speaker over the network.
+     When a new IU is incoming, the module blocks as   ******** NOPE
+    long as the current IU is being played."""
+
+    @staticmethod
+    def name():
+        return "Sota Speaker Module"
+
+    @staticmethod
+    def description():
+        return "A consuming module that plays audio from a connected VStone Sota."
+
+    @staticmethod
+    def input_ius():
+        return [AudioIU]
+
+    @staticmethod
+    def output_iu():
+        return None
+
+    def __init__(
+        self,
+        sota: ConnectionManager,
+        data_udp_port: int,
+        output_sample_rate : int = None,  # what to tell the Sota to use. None defaults to not asking
+        output_sample_width : int = None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self._has_incoming_audio_params = False
+        self._incoming_sample_rate = None
+        self._incoming_sample_width = None
+
+        self._sota = sota
+        self._data_udp_port = data_udp_port
+        self._output_sample_rate = output_sample_rate
+        self._output_sample_width = output_sample_width
+
+        self._audio_buffer = sota.speaker.data_queue
+
+    def _confirm_input_audio_params(self):
+        self._has_incoming_audio_params = True
+
+    def process_update(self, update_message):
+        for iu, ut in update_message:
+
+            if not self._has_incoming_audio_params:
+                self._incoming_sample_width = iu.sample_width
+                self._incoming_sample_rate = iu.rate
+                self._has_incoming_audio_params = True
+
+            if ut == retico_core.UpdateType.ADD:
+                self._audio_buffer.put(bytes(iu.raw_audio), block=False)
+
+        return None
+
+    def setup(self):
+        self._sota.speaker.enable(data_udp_port=self._data_udp_port)
+
+    def shutdown(self):
+        self._sota.speaker.disable()
+
+class StreamingMonoResampler:
+    def __init__(self,
+                 source_rate: int,
+                 target_rate: int,
+                 history_samples: int = 32, # how much history to use in the resampler window
+                 source_dtype : np.dtype = np.dtype('int16'),
+                 target_dtype: np.dtype = np.dtype('int16'),
+                 ):
+        self._source_sr = source_rate
+        self._target_sr = target_rate
+        self._source_dtype = source_dtype
+        self._target_dtype = target_dtype
+
+        self._history_samples = history_samples
+        self._history_buffer = np.zeros(self._history_samples, dtype=self._source_dtype)
+
+        gcd = np.gcd(self._target_sr, self._source_sr)  # calculate paramaters for polyphase resampling
+        self._poly_up_factor = self._target_sr // gcd
+        self._poly_down_factor = self._source_sr // gcd
+
+    def resample_chunk(self, raw_audio_bytes: bytes) -> bytes:
+
+        if self._source_sr == self._target_sr:
+            return raw_audio_bytes
+
+        new_chunk = np.frombuffer(raw_audio_bytes, dtype=self._source_dtype)
+        self._history_buffer = np.concatenate((self._history_buffer, new_chunk))
+
+        resampled_wave = signal.resample_poly(
+            self._history_buffer.astype(np.float32),
+            up=self._poly_up_factor,
+            down=self._poly_down_factor
+        )
+
+        self._history_buffer = self._history_buffer[-self._history_samples:]
+        history_in_target_sr = int(self._history_samples * self._poly_up_factor / self._poly_down_factor)
+        resampled_wave = resampled_wave[history_in_target_sr:]   # trim off the history
+
+        return resampled_wave.astype(self._target_dtype).tobytes()

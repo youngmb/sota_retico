@@ -9,6 +9,7 @@ from sota_retico import SotaMicrophoneModule
 
 import retico_core
 
+from sota_retico.sota_audio import SotaSpeakerModule
 
 print("Starting hugging face lm...",end="")
 device = "cuda:0"
@@ -24,6 +25,7 @@ print("Done")
 SOTA_IP = "10.151.63.71"
 HTTP_PORT = "8080"
 MIC_UDP_PORT = 52001
+SPEAKER_UDP_PORT = 52002
 
 
 msg = []
@@ -52,7 +54,8 @@ def callback(update_msg):
 sota = ConnectionManager(SOTA_IP, HTTP_PORT)
 # microphone_module = MicrophoneModule(rate=16000, sample_width=2)
 microphone_module = SotaMicrophoneModule(sota, MIC_UDP_PORT, buffer_ms=20)
-speaker_module = SpeakerModule(rate=22050, sample_width=2)
+# speaker_module = SpeakerModule(rate=22050, sample_width=2)
+speaker_module = SotaSpeakerModule(sota, SPEAKER_UDP_PORT)
 
 print("Starting Whisper ASR...", end="")
 asr = WhisperASRModule()
