@@ -8,14 +8,12 @@ audio input and output via the Sota
 """
 
 import queue
-import platform
 import pyaudio
 import retico_core
 from retico_core.audio import AudioIU
 from sota_thinclient import ConnectionManager
 import numpy as np
 from scipy import signal
-
 
 CHANNELS = 1
 """Number of channels. For now, this is hard coded MONO. If there is interest to do
