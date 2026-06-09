@@ -40,7 +40,7 @@ def callback(update_msg):
             msg.remove(x)
     print("")
 
-    txt = ""
+    txt = "Committed: "
     committed = False
     for x in msg:
         txt += x.text + " "

@@ -8,14 +8,14 @@ audio input and output via the Sota
 """
 
 import queue
-import platform
+import numpy as np
 import pyaudio
 import retico_core
 from retico_core.audio import AudioIU
+import sota_thinclient
 from sota_thinclient import ConnectionManager
-import numpy as np
-from scipy import signal
-
+from sota_thinclient.http_audio_stream import _FIELD_SAMPLERATE, _FIELD_SAMPLEWIDTH, _FIELD_BUFFERSIZE, \
+    StreamingMonoResampler
 
 CHANNELS = 1
 """Number of channels. For now, this is hard coded MONO. If there is interest to do
@@ -97,19 +97,19 @@ class SotaMicrophoneModule(retico_core.AbstractProducingModule):
         sota_state = self._sota.microphone.get_state(use_cached=True)
         print("Initial mic stream state"+str(sota_state))
 
-        self._rate = sota_state['sampleRate']
-        self._sample_width = sota_state['sampleSize_bits'] // 8
+        self._rate = sota_state[_FIELD_SAMPLERATE]
+        self._sample_width = sota_state[_FIELD_SAMPLEWIDTH] // 8
 
         buffer_size_needed = int(self._buffer_ms * self._rate / 1000 * self._sample_width)
 
-        if buffer_size_needed != sota_state['bufferSize']:  # we need to restart with a different buffer size
+        if buffer_size_needed != sota_state[_FIELD_BUFFERSIZE]:  # we need to restart with a different buffer size
             self._sota.microphone.enable(data_udp_port=self._data_udp_port,
                                          request_buffer_size=buffer_size_needed,
                                          restart_if_enabled=True)
             sota_state = self._sota.microphone.get_state(use_cached=True)
             print("Updated mic stream state" + str(sota_state))
 
-        self._frames_per_buffer = sota_state['bufferSize'] // self._sample_width
+        self._frames_per_buffer = sota_state[_FIELD_BUFFERSIZE] // self._sample_width
 
     def prepare_run(self):
         pass
@@ -160,24 +160,50 @@ class SotaSpeakerModule(retico_core.AbstractConsumingModule):
 
         self._audio_buffer = sota.speaker.data_queue
 
+        self._resampler = None
+
     def _confirm_input_audio_params(self):
         self._has_incoming_audio_params = True
 
+    def _setup_sampler(self):
+        self._resampler =  StreamingMonoResampler(
+            source_rate=self._incoming_sample_rate,
+            source_dtype=np.dtype(f'int{self._incoming_sample_width}'),
+            target_rate=self._output_sample_rate,
+            target_dtype=np.dtype(f'int{self._output_sample_width}')
+        )
+
+    # last = None  # debug code
+    # counter = 0
     def process_update(self, update_message):
+        # if not self.last: self.last=time.perf_counter()    ##DEBUG CODE
+        # now = time.perf_counter()
+        # duration = now - self.last
+        # self.last = now
+        # hz = 1/duration
+        # self.counter = (self.counter+1)%10
+        # if self.counter==0: print("duration: "+str(duration)+" hz: "+str(hz)+ " updates "+str(len(update_message))
+
         for iu, ut in update_message:
 
             if not self._has_incoming_audio_params:
-                self._incoming_sample_width = iu.sample_width
+                self._incoming_sample_width = iu.sample_width*8  # we are working in bits for resampling
                 self._incoming_sample_rate = iu.rate
                 self._has_incoming_audio_params = True
+                self._setup_sampler()
 
             if ut == retico_core.UpdateType.ADD:
-                self._audio_buffer.put(bytes(iu.raw_audio), block=False)
+                # if self.counter==0:  print("message len "+ str(len(iu.raw_audio)))
+                resampled = self._resampler.resample_chunk(bytes(iu.raw_audio))
+                self._audio_buffer.put(resampled, block=False)
 
         return None
 
     def setup(self):
         self._sota.speaker.enable(data_udp_port=self._data_udp_port)
+        state = self._sota.speaker.get_state(use_cached=True)
+        self._output_sample_rate = state[_FIELD_SAMPLERATE]
+        self._output_sample_width =state[_FIELD_SAMPLEWIDTH]
 
     def shutdown(self):
         self._sota.speaker.disable()
